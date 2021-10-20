@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import paho.mqtt.client as mqtt
+import sys
 import json
 import time
 from math import radians, sin, cos, sqrt, atan2
@@ -47,10 +48,24 @@ def mqtt_init():
 if __name__ == "__main__":
   mqtt_init()
   with teslapy.Tesla(tesla_user) as tesla:
-    tesla.fetch_token()
-    vehicles = tesla.vehicle_list()
+    try:
+      tesla.fetch_token()
+      vehicles = tesla.vehicle_list()
+    except teslapy.HTTPError as e:
+      print(f"{type(e).__name__}: {str(e)}")
+      sys.exit(1)
+    retry=0
     while True:
-      vehicle_state = vehicles[0].get_vehicle_data()
+      try:
+        vehicle_state = vehicles[0].get_vehicle_data()
+        retry=0
+      except teslapy.HTTPError as e:
+        print(f"{type(e).__name__}: {str(e)}")
+        vehicle_state = {}
+        if retry > 20:
+          print("Too many errors, exiting.")
+          sys.exit(1)
+        retry += 1
       charge_state = vehicle_state.get('charge_state',{})
       if charge_state.get('charging_state') and charge_state['charging_state'] == "Charging":
         local_charge = get_distance(vehicle_state['drive_state']['latitude'], vehicle_state['drive_state']['longitude']) < 0.5
