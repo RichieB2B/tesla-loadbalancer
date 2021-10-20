@@ -64,7 +64,7 @@ if __name__ == "__main__":
         dprint(f"overshoot    = {overshoot}")
         dprint(f"undershoot   = {undershoot}")
         if local_charge and (overshoot or undershoot):
-          new_amps = int(max_current - max(current_max,tesla_amsp) + tesla_amps)
+          new_amps = int(max_current - max(current_max,tesla_amps) + tesla_amps)
           dprint(f"new_amps     = {new_amps}")
           if overshoot:
             max_amps = max(new_amps, twc_min)
