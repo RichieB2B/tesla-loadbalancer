@@ -68,10 +68,12 @@ if __name__ == "__main__":
         except teslapy.HTTPError as e:
           print(f"{type(e).__name__}: {str(e)}")
           vehicle_data = {}
-          if retry > 20:
+          if retry > 60:
             print("Too many errors, exiting.")
             sys.exit(1)
           retry += 1
+          time.sleep(30)
+          continue
         # only actually do something if the Tesla is charging
         charge_state = vehicle_data.get('charge_state',{})
         if charge_state.get('charging_state') and charge_state['charging_state'] == "Charging":
