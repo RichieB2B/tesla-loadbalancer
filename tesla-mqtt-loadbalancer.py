@@ -97,5 +97,9 @@ if __name__ == "__main__":
             # set the new charging speed
             vehicles[0].command('CHARGING_AMPS', charging_amps=max_amps)
             # let things settle after changing amps
-            time.sleep(20)
-      time.sleep(10)
+            time.sleep(10)
+          # always wait at least 10 seconds between Tesla polls
+          time.sleep(10)
+      else:
+        # Tesla was not polled, check DSMR data again soon
+        time.sleep(2)
