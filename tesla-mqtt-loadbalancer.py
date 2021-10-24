@@ -66,10 +66,11 @@ if __name__ == "__main__":
           vehicle_data = vehicles[0].get_vehicle_data()
           retry=0
         except teslapy.HTTPError as e:
-          print(f"{type(e).__name__}: {str(e)}")
+          now=datetime.now().strftime("%b %d %H:%M:%S")
+          print(f"{now} {type(e).__name__}: {str(e)}")
           vehicle_data = {}
           if retry > 60:
-            print("Too many errors, exiting.")
+            print(f"{now} Too many errors, exiting.")
             sys.exit(1)
           retry += 1
           time.sleep(30)
@@ -96,12 +97,14 @@ if __name__ == "__main__":
             else:
               max_amps = min(new_amps, twc_max)
             dprint(f"max_amps     = {max_amps}")
+            now=datetime.now().strftime("%b %d %H:%M:%S")
+            print(f"{now} Power usage is {current_max}A, Tesla is using {tesla_amps}A. Changing Tesla to {max_amps}A.")
             # set the new charging speed
             vehicles[0].command('CHARGING_AMPS', charging_amps=max_amps)
             # let things settle after changing amps
             time.sleep(10)
-          # always wait at least 10 seconds between Tesla polls
-          time.sleep(10)
+        # always wait at least 10 seconds between Tesla polls
+        time.sleep(10)
       else:
         # Tesla was not polled, check DSMR data again soon
         time.sleep(2)
