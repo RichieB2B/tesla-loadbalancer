@@ -12,7 +12,7 @@ max_current = 25
 baseload = 0
 
 # Home charger settings: min/max current and location
-twc_min = 5
+twc_min = 1
 twc_max = 24
 twc_latitude = 52.37821231816995
 twc_longitude = 4.900513198963123

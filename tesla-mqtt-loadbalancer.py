@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python3 -u
 
 import paho.mqtt.client as mqtt
 import sys
@@ -65,7 +65,7 @@ if __name__ == "__main__":
         try:
           vehicle_data = vehicles[0].get_vehicle_data()
           retry=0
-        except teslapy.HTTPError as e:
+        except Exception as e:
           now=datetime.now().strftime("%b %d %H:%M:%S")
           print(f"{now} {type(e).__name__}: {str(e)}")
           vehicle_data = {}
@@ -98,9 +98,13 @@ if __name__ == "__main__":
               max_amps = min(new_amps, twc_max)
             dprint(f"max_amps     = {max_amps}")
             now=datetime.now().strftime("%b %d %H:%M:%S")
-            print(f"{now} Power usage is {current_max}A, Tesla is using {tesla_amps}A. Changing Tesla to {max_amps}A.")
+            print(f"{now} Power usage is {current_max:>2}A, Tesla is using {tesla_amps:>2}A. Changing Tesla to {max_amps:>2}A.", flush=True)
             # set the new charging speed
             vehicles[0].command('CHARGING_AMPS', charging_amps=max_amps)
+            # set it twice if < 5A, see https://github.com/tdorssers/TeslaPy/pull/42
+            if max_amps < 5:
+              time.sleep(5)
+              vehicles[0].command('CHARGING_AMPS', charging_amps=max_amps)
             # let things settle after changing amps
             time.sleep(10)
         # always wait at least 10 seconds between Tesla polls
