@@ -12,8 +12,10 @@ max_current = 25
 baseload = 0
 
 # Home charger settings: min/max current and location
+# twc_safe: set amps to this level after charging session
 twc_min = 1
 twc_max = 24
+twc_safe = 16
 twc_latitude = 52.37821231816995
 twc_longitude = 4.900513198963123
 

@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 from math import radians, sin, cos, sqrt, atan2
 import teslapy
-from config import mqtt_broker, tesla_user, max_current, baseload, twc_min, twc_max, twc_latitude, twc_longitude, debug
+from config import mqtt_broker, tesla_user, max_current, baseload, twc_min, twc_max, twc_safe, twc_latitude, twc_longitude, debug
 
 # Initial values
 current1 = current2 = current3 = -1
@@ -56,6 +56,7 @@ if __name__ == "__main__":
     except teslapy.HTTPError as e:
       print(f"{type(e).__name__}: {str(e)}")
       sys.exit(1)
+    charging = False
     retry=0
     while True:
       current_max = max(current1, current2, current3)
@@ -81,34 +82,49 @@ if __name__ == "__main__":
           # is the Tesla within 500 meters from home?
           local_charge = get_distance(vehicle_data['drive_state']['latitude'], vehicle_data['drive_state']['longitude']) < 0.5
           tesla_amps = charge_state['charger_actual_current']
+          charge_amps = charge_state['charge_amps']
           overshoot = current_max > max_current
-          undershoot = current_max < max_current and tesla_amps < twc_max
+          undershoot = current_max < max_current and charge_amps < twc_max
           dprint(f"tesla_amps   = {tesla_amps}")
           dprint(f"current_max  = {current_max}")
           dprint(f"local_charge = {local_charge}")
           dprint(f"overshoot    = {overshoot}")
           dprint(f"undershoot   = {undershoot}")
-          # is there a need to adjust the charging speed?
-          if local_charge and (overshoot or undershoot):
-            new_amps = int(max_current - max(current_max,tesla_amps) + tesla_amps)
-            dprint(f"new_amps     = {new_amps}")
-            if overshoot:
-              max_amps = max(new_amps, twc_min)
-            else:
-              max_amps = min(new_amps, twc_max)
-            dprint(f"max_amps     = {max_amps}")
-            now=datetime.now().strftime("%b %d %H:%M:%S")
-            print(f"{now} Power usage is {current_max:>2}A, Tesla is using {tesla_amps:>2}A. Changing Tesla to {max_amps:>2}A.", flush=True)
-            # set the new charging speed
-            vehicles[0].command('CHARGING_AMPS', charging_amps=max_amps)
-            # set it twice if < 5A, see https://github.com/tdorssers/TeslaPy/pull/42
-            if max_amps < 5:
-              time.sleep(5)
+          # is this a charge at home?
+          if local_charge:
+            charging = True
+            # is there a need to adjust the charging speed?
+            if overshoot or undershoot:
+              new_amps = int(max_current - max(current_max,tesla_amps) + tesla_amps)
+              dprint(f"new_amps     = {new_amps}")
+              if overshoot:
+                max_amps = max(new_amps, twc_min)
+              else:
+                max_amps = min(new_amps, twc_max)
+              dprint(f"max_amps     = {max_amps}")
+              now=datetime.now().strftime("%b %d %H:%M:%S")
+              print(f"{now} Power usage is {current_max:>2}A, Tesla is using {tesla_amps:>2}A. Changing Tesla to {max_amps:>2}A.", flush=True)
+              # set the new charging speed
               vehicles[0].command('CHARGING_AMPS', charging_amps=max_amps)
-            # let things settle after changing amps
-            time.sleep(10)
+              # set it twice if < 5A, see https://github.com/tdorssers/TeslaPy/pull/42
+              if max_amps < 5:
+                time.sleep(5)
+                vehicles[0].command('CHARGING_AMPS', charging_amps=max_amps)
+              # let things settle after changing amps
+              time.sleep(10)
+        else:
+          # was a charging session just stopped?
+          if charging:
+            # set safe amps in case load balancing is not running at next charge
+            vehicles[0].command('CHARGING_AMPS', charging_amps=twc_safe)
+            charging = False
         # always wait at least 10 seconds between Tesla polls
         time.sleep(10)
       else:
+        # was a charging session just stopped?
+        if charging:
+          # set safe amps in case load balancing is not running at next charge
+          vehicles[0].command('CHARGING_AMPS', charging_amps=twc_safe)
+          charging = False
         # Tesla was not polled, check DSMR data again soon
         time.sleep(2)
