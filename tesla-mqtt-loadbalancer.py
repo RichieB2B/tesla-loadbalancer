@@ -19,9 +19,18 @@ def dprint(*objects, **argv):
     print(now, *objects, **argv)
 
 def set_amps(vehicle, amps):
-    global last_amps
-    last_amps = amps
-    return vehicle.command('CHARGING_AMPS', charging_amps=amps)
+  global last_amps
+  last_amps = amps
+  # set it twice if < 5A, see https://github.com/tdorssers/TeslaPy/pull/42
+  if amps < 5:
+    vehicle.command('CHARGING_AMPS', charging_amps=amps)
+    time.sleep(5)
+  return vehicle.command('CHARGING_AMPS', charging_amps=amps)
+
+def set_safe_amps(vehicle):
+  now=datetime.now().strftime("%b %d %H:%M:%S")
+  print(f"{now} Changing seems over, setting Tesla to {twc_safe:>2}A.", flush=True)
+  set_amps(vehicle, twc_safe)
 
 def get_distance(latitude, longitude):
   # https://www.kite.com/python/answers/how-to-find-the-distance-between-two-lat-long-coordinates-in-python
@@ -112,17 +121,13 @@ if __name__ == "__main__":
               print(f"{now} Power usage is {current_max:>2}A, Tesla is using {tesla_amps:>2}A. Changing Tesla to {max_amps:>2}A.", flush=True)
               # set the new charging speed
               set_amps(vehicles[0], max_amps)
-              # set it twice if < 5A, see https://github.com/tdorssers/TeslaPy/pull/42
-              if max_amps < 5:
-                time.sleep(5)
-                set_amps(vehicles[0], max_amps)
               # let things settle after changing amps
               time.sleep(10)
         else:
           # was a charging session just stopped?
           if charging:
             # set safe amps in case load balancing is not running at next charge
-            set_amps(vehicles[0], twc_safe)
+            set_safe_amps(vehicles[0])
             charging = False
         # always wait at least 10 seconds between Tesla polls
         time.sleep(10)
@@ -130,7 +135,7 @@ if __name__ == "__main__":
         # was a charging session just stopped?
         if charging:
           # set safe amps in case load balancing is not running at next charge
-          set_amps(vehicles[0], twc_safe)
+          set_safe_amps(vehicles[0])
           charging = False
         # Tesla was not polled, check DSMR data again soon
         time.sleep(2)
