@@ -8,7 +8,7 @@ tesla_user = "elon@tesla.com"
 max_current = 25
 
 # Current (amperage) that is always present in the home
-# The Tesla will only be polled when amperage >= baseload + twc_min
+# The Tesla will only be polled when amperage >= baseload + last_tesla_amps
 baseload = 0
 
 # Home charger settings: min/max current and location

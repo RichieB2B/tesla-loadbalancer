@@ -11,11 +11,17 @@ from config import mqtt_broker, tesla_user, max_current, baseload, twc_min, twc_
 
 # Initial values
 current1 = current2 = current3 = -1
+last_amps = twc_min
 
 def dprint(*objects, **argv):
   if debug:
     now=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(now, *objects, **argv)
+
+def set_amps(vehicle, amps):
+    global last_amps
+    last_amps = amps
+    return vehicle.command('CHARGING_AMPS', charging_amps=amps)
 
 def get_distance(latitude, longitude):
   # https://www.kite.com/python/answers/how-to-find-the-distance-between-two-lat-long-coordinates-in-python
@@ -61,7 +67,7 @@ if __name__ == "__main__":
     while True:
       current_max = max(current1, current2, current3)
       # could a Tesla charge session be going on?
-      if current_max >= baseload + twc_min:
+      if current_max >= baseload + last_amps:
         # poll the Tesla for charging state
         try:
           vehicle_data = vehicles[0].get_vehicle_data()
@@ -105,18 +111,18 @@ if __name__ == "__main__":
               now=datetime.now().strftime("%b %d %H:%M:%S")
               print(f"{now} Power usage is {current_max:>2}A, Tesla is using {tesla_amps:>2}A. Changing Tesla to {max_amps:>2}A.", flush=True)
               # set the new charging speed
-              vehicles[0].command('CHARGING_AMPS', charging_amps=max_amps)
+              set_amps(vehicles[0], max_amps)
               # set it twice if < 5A, see https://github.com/tdorssers/TeslaPy/pull/42
               if max_amps < 5:
                 time.sleep(5)
-                vehicles[0].command('CHARGING_AMPS', charging_amps=max_amps)
+                set_amps(vehicles[0], max_amps)
               # let things settle after changing amps
               time.sleep(10)
         else:
           # was a charging session just stopped?
           if charging:
             # set safe amps in case load balancing is not running at next charge
-            vehicles[0].command('CHARGING_AMPS', charging_amps=twc_safe)
+            set_amps(vehicles[0], twc_safe)
             charging = False
         # always wait at least 10 seconds between Tesla polls
         time.sleep(10)
@@ -124,7 +130,7 @@ if __name__ == "__main__":
         # was a charging session just stopped?
         if charging:
           # set safe amps in case load balancing is not running at next charge
-          vehicles[0].command('CHARGING_AMPS', charging_amps=twc_safe)
+          set_amps(vehicles[0], twc_safe)
           charging = False
         # Tesla was not polled, check DSMR data again soon
         time.sleep(2)
