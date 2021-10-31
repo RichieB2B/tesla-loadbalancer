@@ -8,7 +8,7 @@ It uses the mqtt messages published by [DSMR-reader](https://github.com/dsmrread
 Communication with the Tesla API is done using [TeslaPy](https://github.com/tdorssers/TeslaPy).
 
 # Example charge
-In this example the charge is started at 24A but midway L3 is being used for other purpuses. The load balancer scaled the Tesla back to the maximum current of L3 stays at 25A which is the maximum for this power circuit. As the consumption on L3 decreases the Tesla is scaled back up until it is charging at 24A again.
+In this example the charge is started at 24A but midway L3 is being used for other purposes as well. The load balancer scaled the Tesla back so the maximum current of L3 stays at 25A which is the maximum for this power circuit. As the consumption on L3 decreases the Tesla is scaled back up until it is charging at 24A again.
 
 ![Example](example.png)
 
