@@ -20,12 +20,19 @@ def dprint(*objects, **argv):
 
 def set_amps(vehicle, amps):
   global last_amps
-  last_amps = amps
-  # set it twice if < 5A, see https://github.com/tdorssers/TeslaPy/pull/42
-  if amps < 5:
-    vehicle.command('CHARGING_AMPS', charging_amps=amps)
-    time.sleep(5)
-  return vehicle.command('CHARGING_AMPS', charging_amps=amps)
+  try:
+    # set it twice if < 5A, see https://github.com/tdorssers/TeslaPy/pull/42
+    if amps < 5:
+      vehicle.command('CHARGING_AMPS', charging_amps=amps)
+      time.sleep(5)
+    result = vehicle.command('CHARGING_AMPS', charging_amps=amps)
+    last_amps = amps
+  except teslapy.HTTPError as e:
+    print(f"{type(e).__name__} during CHARGING_AMPS: {str(e)}")
+    result = {}
+  # let things settle after changing amps
+  time.sleep(15)
+  return result
 
 def set_safe_amps(vehicle):
   now=datetime.now().strftime("%b %d %H:%M:%S")
@@ -99,7 +106,7 @@ if __name__ == "__main__":
           tesla_amps = charge_state['charger_actual_current']
           charge_amps = charge_state['charge_amps']
           overshoot = current_max > max_current
-          undershoot = current_max < max_current and charge_amps < twc_max
+          undershoot = current_max < max_current and charge_amps < twc_max and max_current - current_max > 1
           dprint(f"tesla_amps   = {tesla_amps}")
           dprint(f"current_max  = {current_max}")
           dprint(f"local_charge = {local_charge}")
@@ -121,8 +128,6 @@ if __name__ == "__main__":
               print(f"{now} Power usage is {current_max:>2}A, Tesla is using {tesla_amps:>2}A. Changing Tesla to {max_amps:>2}A.", flush=True)
               # set the new charging speed
               set_amps(vehicles[0], max_amps)
-              # let things settle after changing amps
-              time.sleep(10)
         else:
           # was a charging session just stopped?
           if charging:
