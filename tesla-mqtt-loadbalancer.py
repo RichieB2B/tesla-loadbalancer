@@ -19,14 +19,12 @@ def dprint(*objects, **argv):
     print(now, *objects, **argv)
 
 def set_amps(vehicle, amps):
-  global last_amps
   try:
     # set it twice if < 5A, see https://github.com/tdorssers/TeslaPy/pull/42
     if amps < 5:
       vehicle.command('CHARGING_AMPS', charging_amps=amps)
       time.sleep(5)
     result = vehicle.command('CHARGING_AMPS', charging_amps=amps)
-    last_amps = amps
   except teslapy.HTTPError as e:
     print(f"{type(e).__name__} during CHARGING_AMPS: {str(e)}")
     result = {}
@@ -79,6 +77,7 @@ if __name__ == "__main__":
       print(f"{type(e).__name__}: {str(e)}")
       sys.exit(1)
     charging = False
+    debounce = 0
     retry=0
     while True:
       current_max = max(current1, current2, current3)
@@ -104,6 +103,7 @@ if __name__ == "__main__":
           # is the Tesla within 500 meters from home?
           local_charge = get_distance(vehicle_data['drive_state']['latitude'], vehicle_data['drive_state']['longitude']) < 0.5
           tesla_amps = charge_state['charger_actual_current']
+          last_amps = tesla_amps
           charge_amps = charge_state['charge_amps']
           overshoot = current_max > max_current
           undershoot = current_max < max_current and charge_amps < twc_max and max_current - current_max > 1
@@ -115,6 +115,8 @@ if __name__ == "__main__":
           # is this a charge at home?
           if local_charge:
             charging = True
+            # reset debounce counter
+            debounce = 0
             # is there a need to adjust the charging speed?
             if overshoot or undershoot:
               new_amps = int(max_current - max(current_max,tesla_amps) + tesla_amps)
@@ -130,17 +132,21 @@ if __name__ == "__main__":
               set_amps(vehicles[0], max_amps)
         else:
           # was a charging session just stopped?
-          if charging:
+          if charging and debounce > 3:
             # set safe amps in case load balancing is not running at next charge
             set_safe_amps(vehicles[0])
             charging = False
+          # increase debounce counter
+          debounce += 1
         # always wait at least 10 seconds between Tesla polls
         time.sleep(10)
       else:
         # was a charging session just stopped?
-        if charging:
+        if charging and debounce > 3:
           # set safe amps in case load balancing is not running at next charge
           set_safe_amps(vehicles[0])
           charging = False
+        # increase debounce counter
+        debounce += 1
         # Tesla was not polled, check DSMR data again soon
         time.sleep(2)
