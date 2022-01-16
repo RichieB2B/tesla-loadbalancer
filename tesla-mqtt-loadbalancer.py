@@ -11,7 +11,7 @@ from config import mqtt_broker, tesla_user, max_current, baseload, twc_min, twc_
 
 # Initial values
 current1 = current2 = current3 = -1
-last_amps = twc_min
+last_amps = twc_safe
 
 def dprint(*objects, **argv):
   if debug:
@@ -33,8 +33,10 @@ def set_amps(vehicle, amps):
   return result
 
 def set_safe_amps(vehicle):
+  global last_amps
   now=datetime.now().strftime("%b %d %H:%M:%S")
   print(f"{now} Changing seems over, setting Tesla to {twc_safe:>2}A.", flush=True)
+  last_amps = twc_safe
   set_amps(vehicle, twc_safe)
 
 def get_distance(latitude, longitude):
