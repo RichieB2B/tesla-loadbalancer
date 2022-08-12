@@ -1,5 +1,10 @@
 # mqtt broker where dsmr-reader publishes the dsmr/json topic
 mqtt_broker = "127.0.0.1"
+# mqtt topic for dsmr-reader messages
+mqtt_p1_topic = "dsmr/json"
+# mqtt topic for EV Charger kWh meter, set to None use Tesla API instead
+mqtt_ev_topic = "mbmd/orno3p1-1"
+mqtt_ev_current = "Current"
 
 # Tesla.com user name
 tesla_user = "elon@tesla.com"
