@@ -54,7 +54,7 @@ def get_distance(latitude, longitude):
   dprint(f"distance = {distance}")
   return distance
 
-def on_message(client, userdata, msg):
+def on_p1_message(client, userdata, msg):
   global current1, current2, current3
   m_decode=str(msg.payload.decode("utf-8","ignore"))
   m=json.loads(m_decode)
@@ -62,15 +62,15 @@ def on_message(client, userdata, msg):
   current2 = m.get('phase_power_current_l2', current2)
   current3 = m.get('phase_power_current_l3', current3)
 
-def mqtt_init():
+def mqtt_p1_init():
   client = mqtt.Client("P1")
-  client.on_message=on_message
+  client.on_message=on_p1_message
   client.connect(mqtt_broker)
   client.subscribe("dsmr/json")
   client.loop_start()
 
 if __name__ == "__main__":
-  mqtt_init()
+  mqtt_p1_init()
   with teslapy.Tesla(tesla_user) as tesla:
     try:
       tesla.fetch_token()
