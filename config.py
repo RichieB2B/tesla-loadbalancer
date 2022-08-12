@@ -2,9 +2,18 @@
 mqtt_broker = "127.0.0.1"
 # mqtt topic for dsmr-reader messages
 mqtt_p1_topic = "dsmr/json"
-# mqtt topic for EV Charger kWh meter, set to None use Tesla API instead
+# The order of reading the EV charging amps is:
+#
+# 1: use ev_meter_url if defined
+# 2: use mqtt_ev_topic if defined
+# 3: use Tesla API
+#
+# kWh meter API url for tools like mbmd, set to None to use MQTT or Tesla API
+ev_meter_url = "http://localhost:8080/api/last/ORNO3P1.1"
+# mqtt topic for EV Charger kWh meter, set to None to use Tesla API
 mqtt_ev_topic = "mbmd/orno3p1-1"
-mqtt_ev_current = "Current"
+# Dict key for EV current values, will be appended with L1, L2 and L3
+ev_current = "Current"
 
 # Tesla.com user name
 tesla_user = "elon@tesla.com"

@@ -7,7 +7,8 @@ import time
 from datetime import datetime
 from math import radians, sin, cos, sqrt, atan2
 import teslapy
-from config import mqtt_broker, mqtt_p1_topic, mqtt_ev_topic, mqtt_ev_current, tesla_user, max_current, baseload, twc_min, twc_max, twc_safe, twc_latitude, twc_longitude, debug
+import requests
+from config import mqtt_broker, mqtt_p1_topic, mqtt_ev_topic, ev_meter_url, ev_current, tesla_user, max_current, baseload, twc_min, twc_max, twc_safe, twc_latitude, twc_longitude, debug
 
 # Initial values
 current1 = current2 = current3 = -1
@@ -74,9 +75,9 @@ def on_ev_message(client, userdata, msg):
   global ev_current1, ev_current2, ev_current3
   m_decode=str(msg.payload.decode("utf-8","ignore"))
   m=json.loads(m_decode)
-  ev_current1 = m.get(mqtt_ev_current + 'L1', ev_current1)
-  ev_current2 = m.get(mqtt_ev_current + 'L2', ev_current2)
-  ev_current3 = m.get(mqtt_ev_current + 'L3', ev_current3)
+  ev_current1 = m.get(ev_current + 'L1', ev_current1)
+  ev_current2 = m.get(ev_current + 'L2', ev_current2)
+  ev_current3 = m.get(ev_current + 'L3', ev_current3)
 
 def mqtt_ev_init():
   client = mqtt.Client("EV")
@@ -84,6 +85,23 @@ def mqtt_ev_init():
   client.connect(mqtt_broker)
   client.subscribe(mqtt_ev_topic)
   client.loop_start()
+
+def get_ev_current(url):
+  global ev_current1, ev_current2, ev_current3
+  try:
+    result = requests.get(url, timeout=5)
+  except requests.exceptions.ReadTimeout as e:
+    return max(ev_current1, ev_current2, ev_current3)
+  try:
+    data = result.json()
+  except Exception as e:
+    print(f'{type(e).__name__}: {str(e)}')
+    print(result.text)
+    return max(ev_current1, ev_current2, ev_current3)
+  ev_current1 = data.get(ev_current + 'L1', ev_current1)
+  ev_current2 = data.get(ev_current + 'L2', ev_current2)
+  ev_current3 = data.get(ev_current + 'L3', ev_current3)
+  return max(ev_current1, ev_current2, ev_current3)
 
 if __name__ == "__main__":
   mqtt_p1_init()
@@ -122,7 +140,9 @@ if __name__ == "__main__":
         if charge_state.get('charging_state') and charge_state['charging_state'] == "Charging":
           # is the Tesla within 500 meters from home?
           local_charge = get_distance(vehicle_data['drive_state']['latitude'], vehicle_data['drive_state']['longitude']) < 0.5
-          if mqtt_ev_topic:
+          if ev_meter_url:
+            tesla_amps = get_ev_current(ev_meter_url)
+          elif mqtt_ev_topic:
             tesla_amps = max(ev_current1, ev_current2, ev_current3)
           else:
             tesla_amps = charge_state['charger_actual_current']
