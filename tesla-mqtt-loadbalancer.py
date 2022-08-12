@@ -25,7 +25,7 @@ def dprint(*objects, **argv):
 def set_amps(vehicle, amps):
   try:
     # set it twice if < 5A, see https://github.com/tdorssers/TeslaPy/pull/42
-    if amps < 5:
+    if amps > 0 and amps < 5:
       vehicle.command('CHARGING_AMPS', charging_amps=amps)
       time.sleep(5)
     result = vehicle.command('CHARGING_AMPS', charging_amps=amps)
