@@ -4,6 +4,7 @@ import paho.mqtt.client as mqtt
 import sys
 import json
 import time
+import math
 from datetime import datetime
 from math import radians, sin, cos, sqrt, atan2
 import teslapy
@@ -13,6 +14,7 @@ from config import mqtt_broker, mqtt_p1_topic, mqtt_ev_topic, ev_meter_url, ev_c
 # Initial values
 current1 = current2 = current3 = -1
 ev_current1 = ev_current2 = ev_current3 = -1
+p1_delivered = p1_returned = p1_voltage_sum = 0
 last_amps = twc_safe
 
 def dprint(*objects, **argv):
@@ -57,12 +59,18 @@ def get_distance(latitude, longitude):
   return distance
 
 def on_p1_message(client, userdata, msg):
-  global current1, current2, current3
+  global current1, current2, current3, p1_delivered, p1_returned, p1_voltage_sum
   m_decode=str(msg.payload.decode("utf-8","ignore"))
   m=json.loads(m_decode)
   current1 = m.get('phase_power_current_l1', current1)
   current2 = m.get('phase_power_current_l2', current2)
   current3 = m.get('phase_power_current_l3', current3)
+  p1_delivered = float(m.get('electricity_currently_delivered', p1_delivered))
+  p1_returned = float(m.get('electricity_currently_returned', p1_returned))
+  v1 = float(m.get('phase_voltage_l1', 230))
+  v2 = float(m.get('phase_voltage_l2', 230))
+  v3 = float(m.get('phase_voltage_l3', 230))
+  p1_voltage_sum = v1 + v2 + v3
 
 def mqtt_p1_init():
   client = mqtt.Client("P1")
@@ -104,7 +112,7 @@ def get_ev_current(url):
   ev_current1 = current1
   ev_current2 = current2
   ev_current3 = current3
-  return max(current1, current2, current3)
+  return math.ceil(max(current1, current2, current3))
 
 if __name__ == "__main__":
   mqtt_p1_init()
@@ -123,7 +131,9 @@ if __name__ == "__main__":
     while True:
       current_max = max(current1, current2, current3)
       # could a Tesla charge session be going on?
-      if current_max >= baseload + last_amps:
+      # or is there negative power use (PV production)?
+      pv_production = p1_returned > 0.0 or p1_delivered * 1000 < last_amps * p1_voltage_sum
+      if current_max >= baseload + last_amps or pv_production:
         # poll the Tesla for charging state
         try:
           vehicle_data = vehicles[0].get_vehicle_data()
@@ -153,6 +163,12 @@ if __name__ == "__main__":
           charge_amps = charge_state['charge_amps']
           overshoot = current_max > max_current
           undershoot = current_max < max_current and charge_amps < twc_max and max_current - current_max > 1
+          if pv_production:
+            undershoot = int(p1_returned * 1000 / p1_voltage_sum) > 0
+            overshoot = int(p1_delivered * 1000 / p1_voltage_sum) > 0
+            dprint("PV production detected")
+            dprint(f"returned     = {int(p1_returned * 1000 / p1_voltage_sum)}")
+            dprint(f"delivered    = {int(p1_delivered * 1000 / p1_voltage_sum)}")
           dprint(f"tesla_amps   = {tesla_amps}")
           dprint(f"current_max  = {current_max}")
           dprint(f"local_charge = {local_charge}")
@@ -165,7 +181,13 @@ if __name__ == "__main__":
             debounce = 0
             # is there a need to adjust the charging speed?
             if overshoot or undershoot:
-              new_amps = int(max_current - max(current_max,tesla_amps) + tesla_amps)
+              if pv_production:
+                if overshoot:
+                  new_amps = last_amps - int(p1_delivered * 1000 / p1_voltage_sum)
+                else:
+                  new_amps = last_amps + int(p1_returned * 1000 / p1_voltage_sum)
+              else:
+                new_amps = int(max_current - max(current_max,tesla_amps) + tesla_amps)
               dprint(f"new_amps     = {new_amps}")
               if overshoot:
                 max_amps = max(new_amps, twc_min)
