@@ -98,10 +98,13 @@ def get_ev_current(url):
     print(f'{type(e).__name__}: {str(e)}')
     print(result.text)
     return max(ev_current1, ev_current2, ev_current3)
-  ev_current1 = data.get(ev_current + 'L1', ev_current1)
-  ev_current2 = data.get(ev_current + 'L2', ev_current2)
-  ev_current3 = data.get(ev_current + 'L3', ev_current3)
-  return max(ev_current1, ev_current2, ev_current3)
+  current1 = data.get(ev_current + 'L1', ev_current1)
+  current2 = data.get(ev_current + 'L2', ev_current2)
+  current3 = data.get(ev_current + 'L3', ev_current3)
+  ev_current1 = current1
+  ev_current2 = current2
+  ev_current3 = current3
+  return max(current1, current2, current3)
 
 if __name__ == "__main__":
   mqtt_p1_init()
