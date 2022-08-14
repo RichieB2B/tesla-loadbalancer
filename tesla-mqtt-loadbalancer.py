@@ -4,16 +4,15 @@ import paho.mqtt.client as mqtt
 import sys
 import json
 import time
-import math
 from datetime import datetime
 from math import radians, sin, cos, sqrt, atan2
 import teslapy
 import requests
-from config import mqtt_broker, mqtt_p1_topic, mqtt_ev_topic, ev_meter_url, ev_current, tesla_user, max_current, baseload, twc_min, twc_max, twc_safe, twc_latitude, twc_longitude, debug
+from config import mqtt_broker, mqtt_p1_topic, mqtt_ev_topic, ev_meter_url, tesla_user, max_current, baseload, twc_min, twc_max, twc_safe, twc_latitude, twc_longitude, debug
 
 # Initial values
 current1 = current2 = current3 = -1
-ev_current1 = ev_current2 = ev_current3 = -1
+ev_current1 = ev_current2 = ev_current3 = ev_power = -1
 p1_delivered = p1_returned = p1_voltage_sum = 0
 last_amps = twc_safe
 
@@ -80,12 +79,14 @@ def mqtt_p1_init():
   client.loop_start()
 
 def on_ev_message(client, userdata, msg):
-  global ev_current1, ev_current2, ev_current3
+  global ev_current1, ev_current2, ev_current3, ev_power
   m_decode=str(msg.payload.decode("utf-8","ignore"))
   m=json.loads(m_decode)
-  ev_current1 = m.get(ev_current + 'L1', ev_current1)
-  ev_current2 = m.get(ev_current + 'L2', ev_current2)
-  ev_current3 = m.get(ev_current + 'L3', ev_current3)
+  ev_current1 = m.get('CurrentL1', ev_current1)
+  ev_current2 = m.get('CurrentL2', ev_current2)
+  ev_current3 = m.get('CurrentL3', ev_current3)
+  ev_power = m.get('Power', ev_power * 1000.0) / 1000.0
+  dprint(f'on_ev_message() set ev_power to {ev_power}')
 
 def mqtt_ev_init():
   client = mqtt.Client("EV")
@@ -94,8 +95,8 @@ def mqtt_ev_init():
   client.subscribe(mqtt_ev_topic)
   client.loop_start()
 
-def get_ev_current(url):
-  global ev_current1, ev_current2, ev_current3
+def get_ev_meter(url):
+  global ev_current1, ev_current2, ev_current3, ev_power
   try:
     result = requests.get(url, timeout=5)
   except requests.exceptions.ReadTimeout as e:
@@ -106,13 +107,27 @@ def get_ev_current(url):
     print(f'{type(e).__name__}: {str(e)}')
     print(result.text)
     return max(ev_current1, ev_current2, ev_current3)
-  current1 = data.get(ev_current + 'L1', ev_current1)
-  current2 = data.get(ev_current + 'L2', ev_current2)
-  current3 = data.get(ev_current + 'L3', ev_current3)
-  ev_current1 = current1
-  ev_current2 = current2
-  ev_current3 = current3
-  return math.ceil(max(current1, current2, current3))
+  my_current1 = data.get('CurrentL1', ev_current1)
+  my_current2 = data.get('CurrentL2', ev_current2)
+  my_current3 = data.get('CurrentL3', ev_current3)
+  my_power = data.get('Power', ev_power * 1000.0) / 1000.0
+  ev_current1 = my_current1
+  ev_current2 = my_current2
+  ev_current3 = my_current3
+  ev_power = my_power
+  dprint(f'get_ev_meter() set ev_power to {ev_power}')
+  return (round(max(my_current1, my_current2, my_current3)), my_power)
+
+def get_tesla_amps(charger_current, charger_power):
+  if ev_meter_url:
+    (amps, power) = get_ev_meter(ev_meter_url)
+  elif mqtt_ev_topic:
+    amps = max(ev_current1, ev_current2, ev_current3)
+    power = ev_power
+  else:
+    amps = charger_current
+    power = float(charger_power)
+  return (amps, power)
 
 if __name__ == "__main__":
   mqtt_p1_init()
@@ -132,7 +147,9 @@ if __name__ == "__main__":
       current_max = max(current1, current2, current3)
       # could a Tesla charge session be going on?
       # or is there negative power use (PV production)?
-      pv_production = p1_returned > 0.0 or p1_delivered * 1000 < last_amps * p1_voltage_sum
+      pv_production = p1_returned > 0.0 or p1_delivered < ev_power
+      dprint(f'p1_delivered = {p1_delivered}')
+      dprint(f'ev_power = {ev_power}')
       if current_max >= baseload + last_amps or pv_production:
         # poll the Tesla for charging state
         try:
@@ -153,12 +170,7 @@ if __name__ == "__main__":
         if charge_state.get('charging_state') and charge_state['charging_state'] == "Charging":
           # is the Tesla within 500 meters from home?
           local_charge = get_distance(vehicle_data['drive_state']['latitude'], vehicle_data['drive_state']['longitude']) < 0.5
-          if ev_meter_url:
-            tesla_amps = get_ev_current(ev_meter_url)
-          elif mqtt_ev_topic:
-            tesla_amps = max(ev_current1, ev_current2, ev_current3)
-          else:
-            tesla_amps = charge_state['charger_actual_current']
+          (tesla_amps, tesla_power) = get_tesla_amps(charge_state['charger_actual_current'], charge_state['charger_power'])
           last_amps = tesla_amps
           charge_amps = charge_state['charge_amps']
           overshoot = current_max > max_current
@@ -183,11 +195,16 @@ if __name__ == "__main__":
             if overshoot or undershoot:
               if pv_production:
                 if overshoot:
-                  new_amps = last_amps - int(p1_delivered * 1000 / p1_voltage_sum)
+                  pv_amps = p1_delivered * 1000 / p1_voltage_sum
+                  new_amps = last_amps - int(pv_amps)
+                  usage_str = f" P1 delivery is {pv_amps:4.1f}A"
                 else:
-                  new_amps = last_amps + int(p1_returned * 1000 / p1_voltage_sum)
+                  pv_amps = p1_returned * 1000 / p1_voltage_sum
+                  new_amps = last_amps + int(pv_amps)
+                  usage_str = f" P1 returned is {pv_amps:4.1f}A"
               else:
                 new_amps = int(max_current - max(current_max,tesla_amps) + tesla_amps)
+                usage_str = f" Power usage is {current_max:>2}A"
               dprint(f"new_amps     = {new_amps}")
               if overshoot:
                 max_amps = max(new_amps, twc_min)
@@ -195,7 +212,7 @@ if __name__ == "__main__":
                 max_amps = min(new_amps, twc_max)
               dprint(f"max_amps     = {max_amps}")
               now=datetime.now().strftime("%b %d %H:%M:%S")
-              print(f"{now} Power usage is {current_max:>2}A, Tesla is using {tesla_amps:>2}A. Changing Tesla to {max_amps:>2}A.", flush=True)
+              print(f"{now} {usage_str}, Tesla is using {tesla_amps:>2}A. Changing Tesla to {max_amps:>2}A.", flush=True)
               # set the new charging speed
               set_amps(vehicles[0], max_amps)
         else:
