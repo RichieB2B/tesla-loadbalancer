@@ -20,11 +20,14 @@ def dprint(*objects, **argv):
   if debug:
     now=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(now, *objects, **argv)
+    sys.stdout.flush()
 
 def set_amps(vehicle, amps):
+  if amps < 1:
+    return {}
   try:
     # set it twice if < 5A, see https://github.com/tdorssers/TeslaPy/pull/42
-    if amps > 0 and amps < 5:
+    if amps < 5:
       vehicle.command('CHARGING_AMPS', charging_amps=amps)
       time.sleep(5)
     result = vehicle.command('CHARGING_AMPS', charging_amps=amps)
@@ -86,7 +89,6 @@ def on_ev_message(client, userdata, msg):
   ev_current2 = m.get('CurrentL2', ev_current2)
   ev_current3 = m.get('CurrentL3', ev_current3)
   ev_power = m.get('Power', ev_power * 1000.0) / 1000.0
-  dprint(f'on_ev_message() set ev_power to {ev_power}')
 
 def mqtt_ev_init():
   client = mqtt.Client("EV")
@@ -115,7 +117,6 @@ def get_ev_meter(url):
   ev_current2 = my_current2
   ev_current3 = my_current3
   ev_power = my_power
-  dprint(f'get_ev_meter() set ev_power to {ev_power}')
   return (round(max(my_current1, my_current2, my_current3)), my_power)
 
 def get_tesla_amps(charger_current, charger_power):
@@ -147,7 +148,7 @@ if __name__ == "__main__":
       current_max = max(current1, current2, current3)
       # could a Tesla charge session be going on?
       # or is there negative power use (PV production)?
-      pv_production = p1_returned > 0.0 or p1_delivered < ev_power
+      pv_production = 8 < datetime.now().hour < 20
       dprint(f'p1_delivered = {p1_delivered}')
       dprint(f'ev_power = {ev_power}')
       if current_max >= baseload + last_amps or pv_production:
@@ -176,11 +177,11 @@ if __name__ == "__main__":
           overshoot = current_max > max_current
           undershoot = current_max < max_current and charge_amps < twc_max and max_current - current_max > 1
           if pv_production:
-            undershoot = int(p1_returned * 1000 / p1_voltage_sum) > 0
-            overshoot = int(p1_delivered * 1000 / p1_voltage_sum) > 0
+            undershoot = p1_returned * 1000 / p1_voltage_sum >= 0.5
+            overshoot = p1_delivered * 1000 / p1_voltage_sum >= 0.5
             dprint("PV production detected")
-            dprint(f"returned     = {int(p1_returned * 1000 / p1_voltage_sum)}")
-            dprint(f"delivered    = {int(p1_delivered * 1000 / p1_voltage_sum)}")
+            dprint(f"returned     = {p1_returned * 1000 / p1_voltage_sum}")
+            dprint(f"delivered    = {p1_delivered * 1000 / p1_voltage_sum}")
           dprint(f"tesla_amps   = {tesla_amps}")
           dprint(f"current_max  = {current_max}")
           dprint(f"local_charge = {local_charge}")
@@ -200,7 +201,7 @@ if __name__ == "__main__":
                   usage_str = f" P1 delivery is {pv_amps:4.1f}A"
                 else:
                   pv_amps = p1_returned * 1000 / p1_voltage_sum
-                  new_amps = last_amps + int(pv_amps)
+                  new_amps = last_amps + round(pv_amps)
                   usage_str = f" P1 returned is {pv_amps:4.1f}A"
               else:
                 new_amps = int(max_current - max(current_max,tesla_amps) + tesla_amps)
