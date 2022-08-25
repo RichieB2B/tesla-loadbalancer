@@ -152,9 +152,13 @@ if __name__ == "__main__":
       dprint(f'p1_delivered = {p1_delivered}')
       dprint(f'ev_power = {ev_power}')
       if current_max >= baseload + last_amps or pv_production:
-        # poll the Tesla for charging state
+        # poll the Tesla for charging state only when online
         try:
-          vehicle_data = vehicles[0].get_vehicle_data()
+          vehicles = tesla.vehicle_list()
+          if vehicles[0]['state'] == 'online':
+            vehicle_data = vehicles[0].get_vehicle_data()
+          else:
+            vehicle_data = {}
           retry=0
         except Exception as e:
           now=datetime.now().strftime("%b %d %H:%M:%S")
