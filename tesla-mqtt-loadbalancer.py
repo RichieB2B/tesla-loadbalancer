@@ -144,7 +144,8 @@ if __name__ == "__main__":
     charging = False
     debounce = 0
     retry=0
-    last_poll=datetime.utcfromtimestamp(0)
+    old_shift_state=''
+    last_poll=parked_since=datetime.utcfromtimestamp(0)
     while True:
       current_max = max(current1, current2, current3)
       # could a Tesla charge session be going on?
@@ -159,10 +160,23 @@ if __name__ == "__main__":
           # poll the Tesla for charging state only when online
           if vehicles[0]['state'] == 'online':
             now=datetime.now()
-            # only poll during charging, when power usage is high or every X minutes to allow sleeping
-            if charging or current_max >= config.baseload + last_amps or now - last_poll > timedelta(minutes=config.sleep):
+            # only poll:
+            # - during charging
+            # - when power usage is high
+            # - right after  parking
+            # - every X minutes to allow sleeping
+            if (
+                 charging or
+                 current_max >= config.baseload + last_amps or
+                 now - parked_since < timedelta(minutes=config.sleep) or
+                 now - last_poll > timedelta(minutes=config.sleep)
+              ):
               dprint('Polling Tesla for charing state')
               vehicle_data = vehicles[0].get_vehicle_data()
+              shift_state = vehicle_data.get('drive_state',{}).get('shift_state','')
+              if old_shift_state != 'P' and shift_state == 'P':
+                parked_since = now
+              old_shift_state = shift_state
               last_poll=now
           else:
             vehicle_data = {}
