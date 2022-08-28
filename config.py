@@ -33,5 +33,8 @@ twc_safe = 16
 twc_latitude = 52.37821231816995
 twc_longitude = 4.900513198963123
 
+# Telsa sleep attempts in minutes
+sleep = 15
+
 # Print debug messages?
 debug = False

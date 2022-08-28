@@ -4,21 +4,21 @@ import paho.mqtt.client as mqtt
 import sys
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from math import radians, sin, cos, sqrt, atan2
 import teslapy
 import requests
-from config import mqtt_broker, mqtt_p1_topic, mqtt_ev_topic, ev_meter_url, tesla_user, max_current, baseload, twc_min, twc_max, twc_safe, twc_latitude, twc_longitude, debug
+import config
 
 # Initial values
 current1 = current2 = current3 = -1
 ev_current1 = ev_current2 = ev_current3 = ev_power = -1
 p1_delivered = p1_returned = p1_voltage_sum = 0
-last_amps = twc_safe
+last_amps = config.twc_safe
 
 def dprint(*objects, **argv):
-  if debug:
-    now=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+  if config.debug:
+    now=datetime.now().strftime("%b %d %H:%M:%S")
     print(now, *objects, **argv)
     sys.stdout.flush()
 
@@ -41,17 +41,17 @@ def set_amps(vehicle, amps):
 def set_safe_amps(vehicle):
   global last_amps
   now=datetime.now().strftime("%b %d %H:%M:%S")
-  print(f"{now} Changing seems over, setting Tesla to {twc_safe:>2}A.", flush=True)
-  last_amps = twc_safe
-  set_amps(vehicle, twc_safe)
+  print(f"{now} Changing seems over, setting Tesla to {config.twc_safe:>2}A.", flush=True)
+  last_amps = config.twc_safe
+  set_amps(vehicle, config.twc_safe)
 
 def get_distance(latitude, longitude):
   # https://www.kite.com/python/answers/how-to-find-the-distance-between-two-lat-long-coordinates-in-python
   R = 6373.0
   lat1 = radians(latitude)
   lon1 = radians(longitude)
-  lat2 = radians(twc_latitude)
-  lon2 = radians(twc_longitude)
+  lat2 = radians(config.twc_latitude)
+  lon2 = radians(config.twc_longitude)
   dlon = lon2 - lon1
   dlat = lat2 - lat1
   a = sin(dlat / 2)**2 + cos(lat1) * cos(lat2) * sin(dlon / 2)**2
@@ -77,8 +77,8 @@ def on_p1_message(client, userdata, msg):
 def mqtt_p1_init():
   client = mqtt.Client("P1")
   client.on_message=on_p1_message
-  client.connect(mqtt_broker)
-  client.subscribe(mqtt_p1_topic)
+  client.connect(config.mqtt_broker)
+  client.subscribe(config.mqtt_p1_topic)
   client.loop_start()
 
 def on_ev_message(client, userdata, msg):
@@ -93,8 +93,8 @@ def on_ev_message(client, userdata, msg):
 def mqtt_ev_init():
   client = mqtt.Client("EV")
   client.on_message=on_ev_message
-  client.connect(mqtt_broker)
-  client.subscribe(mqtt_ev_topic)
+  client.connect(config.mqtt_broker)
+  client.subscribe(config.mqtt_ev_topic)
   client.loop_start()
 
 def get_ev_meter(url):
@@ -120,9 +120,9 @@ def get_ev_meter(url):
   return (round(max(my_current1, my_current2, my_current3)), my_power)
 
 def get_tesla_amps(charger_current, charger_power):
-  if ev_meter_url:
-    (amps, power) = get_ev_meter(ev_meter_url)
-  elif mqtt_ev_topic:
+  if config.ev_meter_url:
+    (amps, power) = get_ev_meter(config.ev_meter_url)
+  elif config.mqtt_ev_topic:
     amps = max(ev_current1, ev_current2, ev_current3)
     power = ev_power
   else:
@@ -132,9 +132,9 @@ def get_tesla_amps(charger_current, charger_power):
 
 if __name__ == "__main__":
   mqtt_p1_init()
-  if mqtt_ev_topic:
+  if config.mqtt_ev_topic:
     mqtt_ev_init()
-  with teslapy.Tesla(tesla_user) as tesla:
+  with teslapy.Tesla(config.tesla_user) as tesla:
     try:
       tesla.fetch_token()
       vehicles = tesla.vehicle_list()
@@ -144,19 +144,26 @@ if __name__ == "__main__":
     charging = False
     debounce = 0
     retry=0
+    last_poll=datetime.utcfromtimestamp(0)
     while True:
       current_max = max(current1, current2, current3)
       # could a Tesla charge session be going on?
-      # or is there negative power use (PV production)?
+      # assume PV production during daytime
       pv_production = 8 < datetime.now().hour < 20
       dprint(f'p1_delivered = {p1_delivered}')
       dprint(f'ev_power = {ev_power}')
-      if current_max >= baseload + last_amps or pv_production:
+      if current_max >= config.baseload + last_amps or pv_production:
         # poll the Tesla for charging state only when online
         try:
           vehicles = tesla.vehicle_list()
+          # poll the Tesla for charging state only when online
           if vehicles[0]['state'] == 'online':
-            vehicle_data = vehicles[0].get_vehicle_data()
+            now=datetime.now()
+            # only poll during charging, when power usage is high or every X minutes to allow sleeping
+            if charging or current_max >= config.baseload + last_amps or now - last_poll > timedelta(minutes=config.sleep):
+              dprint('Polling Tesla for charing state')
+              vehicle_data = vehicles[0].get_vehicle_data()
+              last_poll=now
           else:
             vehicle_data = {}
           retry=0
@@ -178,8 +185,8 @@ if __name__ == "__main__":
           (tesla_amps, tesla_power) = get_tesla_amps(charge_state['charger_actual_current'], charge_state['charger_power'])
           last_amps = tesla_amps
           charge_amps = charge_state['charge_amps']
-          overshoot = current_max > max_current
-          undershoot = current_max < max_current and charge_amps < twc_max and max_current - current_max > 1
+          overshoot = current_max > config.max_current
+          undershoot = current_max < config.max_current and charge_amps < config.twc_max and config.max_current - current_max > 1
           if pv_production:
             undershoot = p1_returned * 1000 / p1_voltage_sum >= 0.5
             overshoot = p1_delivered * 1000 / p1_voltage_sum >= 0.5
@@ -202,19 +209,19 @@ if __name__ == "__main__":
                 if overshoot:
                   pv_amps = p1_delivered * 1000 / p1_voltage_sum
                   new_amps = last_amps - int(pv_amps)
-                  usage_str = f" P1 delivery is {pv_amps:4.1f}A"
+                  usage_str = f"P1 delivery is {pv_amps:4.1f}A"
                 else:
                   pv_amps = p1_returned * 1000 / p1_voltage_sum
                   new_amps = last_amps + round(pv_amps)
-                  usage_str = f" P1 returned is {pv_amps:4.1f}A"
+                  usage_str = f"P1 returned is {pv_amps:4.1f}A"
               else:
-                new_amps = int(max_current - max(current_max,tesla_amps) + tesla_amps)
-                usage_str = f" Power usage is {current_max:>2}A"
+                new_amps = int(config.max_current - max(current_max,tesla_amps) + tesla_amps)
+                usage_str = f"Power usage is {current_max:>2}A"
               dprint(f"new_amps     = {new_amps}")
               if overshoot:
-                max_amps = max(new_amps, twc_min)
+                max_amps = max(new_amps, config.twc_min)
               else:
-                max_amps = min(new_amps, twc_max)
+                max_amps = min(new_amps, config.twc_max)
               dprint(f"max_amps     = {max_amps}")
               now=datetime.now().strftime("%b %d %H:%M:%S")
               print(f"{now} {usage_str}, Tesla is using {tesla_amps:>2}A. Changing Tesla to {max_amps:>2}A.", flush=True)
