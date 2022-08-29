@@ -171,7 +171,7 @@ if __name__ == "__main__":
                  now - parked_since < timedelta(minutes=config.sleep) or
                  now - last_poll > timedelta(minutes=config.sleep)
               ):
-              dprint('Polling Tesla for charing state')
+              dprint('Polling Tesla for charging state')
               vehicle_data = vehicles[0].get_vehicle_data()
               shift_state = vehicle_data.get('drive_state',{}).get('shift_state','')
               if old_shift_state != 'P' and shift_state == 'P':
