@@ -174,7 +174,7 @@ if __name__ == "__main__":
               dprint('Polling Tesla for charging state')
               vehicle_data = vehicles[0].get_vehicle_data()
               shift_state = vehicle_data.get('drive_state',{}).get('shift_state','')
-              if old_shift_state != 'P' and shift_state == 'P':
+              if old_shift_state and old_shift_state != 'P' and shift_state == 'P':
                 parked_since = now
               old_shift_state = shift_state
               last_poll=now
