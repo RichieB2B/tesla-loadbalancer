@@ -163,11 +163,13 @@ if __name__ == "__main__":
             # only poll:
             # - during charging
             # - when power usage is high
+            # - while driving (to notice parking)
             # - right after  parking
             # - every X minutes to allow sleeping
             if (
                  charging or
                  current_max >= config.baseload + last_amps or
+                 (old_shift_state and old_shift_state != 'P') or
                  now - parked_since < timedelta(minutes=config.sleep) or
                  now - last_poll > timedelta(minutes=config.sleep)
               ):
