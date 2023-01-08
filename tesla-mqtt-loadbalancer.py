@@ -18,7 +18,7 @@ last_amps = config.twc_safe
 
 def dprint(*objects, **argv):
   if config.debug:
-    now=datetime.now().strftime("%b %d %H:%M:%S")
+    now=datetime.now().strftime("%b %e %H:%M:%S")
     print(now, *objects, **argv)
     sys.stdout.flush()
 
@@ -40,7 +40,7 @@ def set_amps(vehicle, amps):
 
 def set_safe_amps(vehicle):
   global last_amps
-  now=datetime.now().strftime("%b %d %H:%M:%S")
+  now=datetime.now().strftime("%b %e %H:%M:%S")
   print(f"{now} Changing seems over, setting Tesla to {config.twc_safe:>2}A.", flush=True)
   last_amps = config.twc_safe
   set_amps(vehicle, config.twc_safe)
@@ -164,7 +164,7 @@ if __name__ == "__main__":
             # - during charging
             # - when power usage is high
             # - while driving (to notice parking)
-            # - right after  parking
+            # - right after parking
             # - every X minutes to allow sleeping
             if (
                  charging or
@@ -184,7 +184,7 @@ if __name__ == "__main__":
             vehicle_data = {}
           retry=0
         except Exception as e:
-          now=datetime.now().strftime("%b %d %H:%M:%S")
+          now=datetime.now().strftime("%b %e %H:%M:%S")
           print(f"{now} {type(e).__name__}: {str(e)}")
           vehicle_data = {}
           if retry > 60:
@@ -197,7 +197,8 @@ if __name__ == "__main__":
         charge_state = vehicle_data.get('charge_state',{})
         if charge_state.get('charging_state') and charge_state['charging_state'] == "Charging":
           # is the Tesla within 500 meters from home?
-          local_charge = get_distance(vehicle_data['drive_state']['latitude'], vehicle_data['drive_state']['longitude']) < 0.5
+          drive_state = vehicle_data.get('drive_state',{})
+          local_charge = get_distance(drive_state.get('latitude',0), drive_state.get('longitude',0)) < 0.5
           (tesla_amps, tesla_power) = get_tesla_amps(charge_state['charger_actual_current'], charge_state['charger_power'])
           last_amps = tesla_amps
           charge_amps = charge_state['charge_amps']
@@ -239,7 +240,7 @@ if __name__ == "__main__":
               else:
                 max_amps = min(new_amps, config.twc_max)
               dprint(f"max_amps     = {max_amps}")
-              now=datetime.now().strftime("%b %d %H:%M:%S")
+              now=datetime.now().strftime("%b %e %H:%M:%S")
               print(f"{now} {usage_str}, Tesla is using {tesla_amps:>2}A. Changing Tesla to {max_amps:>2}A.", flush=True)
               # set the new charging speed
               set_amps(vehicles[0], max_amps)
