@@ -20,7 +20,7 @@ ev_current1 = ev_current2 = ev_current3 = ev_power = -1
 p1_delivered = p1_returned = p1_voltage_sum = 0
 last_amps = 0
 max_tesla = config.twc_safe
-pv_mode = False
+pv_mode = config.pv_mode
 
 # Flash web server
 app = Flask(__name__)

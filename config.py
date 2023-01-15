@@ -36,6 +36,9 @@ twc_longitude = 4.900513198963123
 # Telsa sleep attempts in minutes
 sleep = 15
 
+# Track PV production?
+pv_mode = False
+
 # Flask web server
 listen = "0.0.0.0"
 port = 8088
