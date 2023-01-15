@@ -1,0 +1,22 @@
+<form method="POST" action="/save">
+  <h2>Charging mode</h2>
+  <p>
+    <input type="radio" name="mode" value="normal"
+      {% if not pvmode %}
+        checked
+      {% endif %}
+    >Normal<br>
+    <input type="radio" name="mode" value="pv"
+      {% if pvmode %}
+        checked
+      {% endif %}
+    >Follow PV production<br>
+  </p>
+  <p>
+    Max charging amps: <input type="text" name="amps" size=2 value="{{ amps }}"> A
+  </p>
+  <p>
+    <input type=submit value="Save">
+  </p>
+</form>
+

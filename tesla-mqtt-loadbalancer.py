@@ -1,6 +1,7 @@
 #!/usr/bin/python3 -u
 
 import paho.mqtt.client as mqtt
+from flask import Flask, render_template, request
 import sys
 import json
 import time
@@ -8,6 +9,8 @@ from datetime import datetime, timedelta
 from math import radians, sin, cos, sqrt, atan2
 import teslapy
 import requests
+import threading
+import logging
 import config
 
 # Initial values
@@ -15,12 +18,43 @@ current1 = current2 = current3 = -1
 ev_current1 = ev_current2 = ev_current3 = ev_power = -1
 p1_delivered = p1_returned = p1_voltage_sum = 0
 last_amps = config.twc_safe
+max_tesla = config.twc_safe
+pv_mode = False
+
+# Flash web server
+app = Flask(__name__)
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 
 def dprint(*objects, **argv):
   if config.debug:
     now=datetime.now().strftime("%b %e %H:%M:%S")
     print(now, *objects, **argv)
     sys.stdout.flush()
+
+@app.route("/")
+def index():
+  return render_template('main.html', amps=max_tesla, pvmode=pv_mode)
+
+@app.route("/save", methods=['POST'])
+def save():
+  global pv_mode
+  global max_tesla
+  if request.form.get('mode','') == 'pv':
+    pv_mode = True
+  else:
+    pv_mode = False
+  amps = request.form.get('amps','')
+  if amps and amps.isdigit():
+    amps = int(amps)
+    if amps > config.twc_max:
+      amps = config.twc_max
+    if amps < config.twc_min:
+      amps = config.twc_min
+    max_tesla = amps
+  now=datetime.now().strftime("%b %e %H:%M:%S")
+  print(f"{now} Web interface saved: pv_mode = {pv_mode}, amps = {max_tesla}")
+  return render_template('saved.html'), {"Refresh": "3; url=/"}
 
 def set_amps(vehicle, amps):
   if amps < 1:
@@ -128,6 +162,7 @@ def get_tesla_amps(charger_current, charger_power):
 
 if __name__ == "__main__":
   mqtt_init()
+  threading.Thread(target=lambda: app.run(host=config.listen, port=config.port, debug=config.debug, use_reloader=False)).start()
   with teslapy.Tesla(config.tesla_user) as tesla:
     try:
       tesla.fetch_token()
@@ -144,7 +179,7 @@ if __name__ == "__main__":
       current_max = max(current1, current2, current3)
       # could a Tesla charge session be going on?
       # assume PV production during daytime
-      pv_production = 8 < datetime.now().hour < 20
+      pv_production = pv_mode and (8 < datetime.now().hour < 21)
       dprint(f'p1_delivered = {p1_delivered}')
       dprint(f'ev_power = {ev_power}')
       if current_max >= config.baseload + last_amps or pv_production:
@@ -196,15 +231,17 @@ if __name__ == "__main__":
           (tesla_amps, tesla_power) = get_tesla_amps(charge_state['charger_actual_current'], charge_state['charger_power'])
           last_amps = tesla_amps
           charge_amps = charge_state['charge_amps']
-          overshoot = current_max > config.max_current
-          undershoot = current_max < config.max_current and charge_amps < config.twc_max and config.max_current - current_max > 1
+          overshoot = current_max > min(config.max_current, max_tesla)
+          undershoot = tesla_amps < max_tesla and charge_amps < config.twc_max and config.max_current - current_max > 1
           if pv_production:
             undershoot = p1_returned * 1000 / p1_voltage_sum >= 0.5
             overshoot = p1_delivered * 1000 / p1_voltage_sum >= 0.5
             dprint("PV production detected")
             dprint(f"returned     = {p1_returned * 1000 / p1_voltage_sum}")
             dprint(f"delivered    = {p1_delivered * 1000 / p1_voltage_sum}")
+          dprint(f"charge_amps  = {charge_amps}")
           dprint(f"tesla_amps   = {tesla_amps}")
+          dprint(f"max_tesla    = {max_tesla}")
           dprint(f"current_max  = {current_max}")
           dprint(f"local_charge = {local_charge}")
           dprint(f"overshoot    = {overshoot}")
@@ -226,7 +263,8 @@ if __name__ == "__main__":
                   new_amps = last_amps + round(pv_amps)
                   usage_str = f"P1 returned is {pv_amps:4.1f}A"
               else:
-                new_amps = int(config.max_current - max(current_max,tesla_amps) + tesla_amps)
+                headroom = int(config.max_current - max(current_max,tesla_amps))
+                new_amps = min(headroom + tesla_amps, max_tesla)
                 usage_str = f"Power usage is {current_max:>2}A"
               dprint(f"new_amps     = {new_amps}")
               if overshoot:

@@ -36,5 +36,9 @@ twc_longitude = 4.900513198963123
 # Telsa sleep attempts in minutes
 sleep = 15
 
+# Flask web server
+listen = "0.0.0.0"
+port = 8088
+
 # Print debug messages?
 debug = False
