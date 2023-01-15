@@ -74,13 +74,6 @@ def on_p1_message(client, userdata, msg):
   v3 = float(m.get('phase_voltage_l3', 230))
   p1_voltage_sum = v1 + v2 + v3
 
-def mqtt_p1_init():
-  client = mqtt.Client("P1")
-  client.on_message=on_p1_message
-  client.connect(config.mqtt_broker)
-  client.subscribe(config.mqtt_p1_topic)
-  client.loop_start()
-
 def on_ev_message(client, userdata, msg):
   global ev_current1, ev_current2, ev_current3, ev_power
   m_decode=str(msg.payload.decode("utf-8","ignore"))
@@ -90,11 +83,14 @@ def on_ev_message(client, userdata, msg):
   ev_current3 = m.get('CurrentL3', ev_current3)
   ev_power = m.get('Power', ev_power * 1000.0) / 1000.0
 
-def mqtt_ev_init():
-  client = mqtt.Client("EV")
-  client.on_message=on_ev_message
+def mqtt_init():
+  client = mqtt.Client("P1")
+  client.message_callback_add(config.mqtt_p1_topic,on_p1_message)
   client.connect(config.mqtt_broker)
-  client.subscribe(config.mqtt_ev_topic)
+  client.subscribe(config.mqtt_p1_topic)
+  if config.mqtt_ev_topic:
+    client.message_callback_add(config.mqtt_ev_topic,on_ev_message)
+    client.subscribe(config.mqtt_ev_topic)
   client.loop_start()
 
 def get_ev_meter(url):
@@ -131,9 +127,7 @@ def get_tesla_amps(charger_current, charger_power):
   return (amps, power)
 
 if __name__ == "__main__":
-  mqtt_p1_init()
-  if config.mqtt_ev_topic:
-    mqtt_ev_init()
+  mqtt_init()
   with teslapy.Tesla(config.tesla_user) as tesla:
     try:
       tesla.fetch_token()
