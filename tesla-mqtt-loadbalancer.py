@@ -2,6 +2,7 @@
 
 import paho.mqtt.client as mqtt
 from flask import Flask, render_template, request
+import flask.cli
 import sys
 import json
 import time
@@ -162,6 +163,8 @@ def get_tesla_amps(charger_current, charger_power):
 
 if __name__ == "__main__":
   mqtt_init()
+  if not config.debug:
+    flask.cli.show_server_banner = lambda *args: None
   threading.Thread(target=lambda: app.run(host=config.listen, port=config.port, debug=config.debug, use_reloader=False)).start()
   with teslapy.Tesla(config.tesla_user) as tesla:
     try:
