@@ -54,7 +54,7 @@ def save():
       amps = config.twc_min
     max_tesla = amps
   now=datetime.now().strftime("%b %e %H:%M:%S")
-  print(f"{now} Web interface saved: pv_mode = {pv_mode}, amps = {max_tesla}")
+  print(f"{now} Web interface saved: pv_mode = {pv_mode}, amps = {max_tesla}", flush=True)
   return render_template('saved.html'), {"Refresh": "3; url=/"}
 
 def set_amps(vehicle, amps):
@@ -235,7 +235,7 @@ if __name__ == "__main__":
           last_amps = tesla_amps
           charge_amps = charge_state['charge_amps']
           overshoot = current_max > min(config.max_current, max_tesla)
-          undershoot = tesla_amps < max_tesla and charge_amps < config.twc_max and config.max_current - current_max > 1
+          undershoot = tesla_amps < max_tesla and charge_amps < max_tesla and config.max_current - current_max > 1
           if pv_production:
             undershoot = p1_returned * 1000 / p1_voltage_sum >= 0.5
             overshoot = p1_delivered * 1000 / p1_voltage_sum >= 0.5
