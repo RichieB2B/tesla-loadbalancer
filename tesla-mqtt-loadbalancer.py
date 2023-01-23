@@ -21,11 +21,18 @@ p1_delivered = p1_returned = p1_voltage_sum = 0
 last_amps = 0
 max_tesla = config.twc_safe
 pv_mode = config.pv_mode
+p1_updated = ev_updated = datetime.min
+last_printed = datetime.now()
 
 # Flash web server
 app = Flask(__name__)
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
+
+def tprint(*objects, **argv):
+  now=datetime.now().strftime("%b %e %H:%M:%S")
+  print(now, *objects, **argv)
+  sys.stdout.flush()
 
 def dprint(*objects, **argv):
   if config.debug:
@@ -53,8 +60,7 @@ def save():
     if amps < config.twc_min:
       amps = config.twc_min
     max_tesla = amps
-  now=datetime.now().strftime("%b %e %H:%M:%S")
-  print(f"{now} Web interface saved: pv_mode = {pv_mode}, amps = {max_tesla}", flush=True)
+  tprint(f"Web interface saved: pv_mode = {pv_mode}, amps = {max_tesla}")
   return render_template('saved.html'), {"Refresh": "3; url=/"}
 
 def set_amps(vehicle, amps):
@@ -75,8 +81,7 @@ def set_amps(vehicle, amps):
 
 def set_safe_amps(vehicle):
   global last_amps
-  now=datetime.now().strftime("%b %e %H:%M:%S")
-  print(f"{now} Changing seems over, setting Tesla to {config.twc_safe:>2}A.", flush=True)
+  tprint(f"Changing seems over, setting Tesla to {config.twc_safe:>2}A.")
   last_amps = config.twc_safe
   set_amps(vehicle, config.twc_safe)
 
@@ -96,7 +101,7 @@ def get_distance(latitude, longitude):
   return distance
 
 def on_p1_message(client, userdata, msg):
-  global current1, current2, current3, p1_delivered, p1_returned, p1_voltage_sum
+  global current1, current2, current3, p1_delivered, p1_returned, p1_voltage_sum, p1_updated
   m_decode=str(msg.payload.decode("utf-8","ignore"))
   m=json.loads(m_decode)
   current1 = m.get('phase_power_current_l1', current1)
@@ -108,6 +113,7 @@ def on_p1_message(client, userdata, msg):
   v2 = float(m.get('phase_voltage_l2', 230))
   v3 = float(m.get('phase_voltage_l3', 230))
   p1_voltage_sum = v1 + v2 + v3
+  p1_updated = datetime.now()
 
 def on_ev_message(client, userdata, msg):
   global ev_current1, ev_current2, ev_current3, ev_power
@@ -151,6 +157,7 @@ def get_ev_meter(url):
   return (round(max(my_current1, my_current2, my_current3)), my_power)
 
 def get_tesla_amps(charger_current, charger_power):
+  global ev_updated
   if config.ev_meter_url:
     (amps, power) = get_ev_meter(config.ev_meter_url)
   elif config.mqtt_ev_topic:
@@ -159,6 +166,7 @@ def get_tesla_amps(charger_current, charger_power):
   else:
     amps = charger_current
     power = float(charger_power)
+  ev_updated = datetime.now()
   return (amps, power)
 
 if __name__ == "__main__":
@@ -180,9 +188,13 @@ if __name__ == "__main__":
     last_poll=parked_since=datetime.utcfromtimestamp(0)
     while True:
       current_max = max(current1, current2, current3)
+      now=datetime.now()
+      if (now - last_printed).total_seconds() >= 3600:
+        tprint(f"P1 last updated at {p1_updated}, EV last updated at {ev_updated}")
+        last_printed = now
       # could a Tesla charge session be going on?
       # assume PV production during daytime
-      pv_production = pv_mode and (8 < datetime.now().hour < 21)
+      pv_production = pv_mode and (8 < now.hour < 21)
       dprint(f'p1_delivered = {p1_delivered}')
       dprint(f'ev_power = {ev_power}')
       if current_max >= config.baseload + last_amps or pv_production:
@@ -191,7 +203,6 @@ if __name__ == "__main__":
           vehicles = tesla.vehicle_list()
           # poll the Tesla for charging state only when online
           if vehicles[0]['state'] == 'online':
-            now=datetime.now()
             # only poll:
             # - during charging
             # - when power usage is high
@@ -216,8 +227,7 @@ if __name__ == "__main__":
             vehicle_data = {}
           retry=0
         except Exception as e:
-          now=datetime.now().strftime("%b %e %H:%M:%S")
-          print(f"{now} {type(e).__name__}: {str(e)}")
+          tprint(f"{type(e).__name__}: {str(e)}")
           vehicle_data = {}
           if retry > 60:
             print(f"{now} Too many errors, exiting.")
@@ -234,8 +244,8 @@ if __name__ == "__main__":
           (tesla_amps, tesla_power) = get_tesla_amps(charge_state['charger_actual_current'], charge_state['charger_power'])
           last_amps = tesla_amps
           charge_amps = charge_state['charge_amps']
-          overshoot = current_max > min(config.max_current, max_tesla)
-          undershoot = tesla_amps < max_tesla and charge_amps < max_tesla and config.max_current - current_max > 1
+          overshoot  = min(charge_amps, tesla_amps) > max_tesla or  current_max > config.max_current
+          undershoot = max(charge_amps, tesla_amps) < max_tesla and current_max < config.max_current - 1
           if pv_production:
             undershoot = p1_returned * 1000 / p1_voltage_sum >= 0.5
             overshoot = p1_delivered * 1000 / p1_voltage_sum >= 0.5
@@ -275,8 +285,7 @@ if __name__ == "__main__":
               else:
                 max_amps = min(new_amps, config.twc_max)
               dprint(f"max_amps     = {max_amps}")
-              now=datetime.now().strftime("%b %e %H:%M:%S")
-              print(f"{now} {usage_str}, Tesla is using {tesla_amps:>2}A. Changing Tesla to {max_amps:>2}A.", flush=True)
+              tprint(f"{usage_str}, Tesla is using {tesla_amps:>2}A. Changing Tesla to {max_amps:>2}A.")
               # set the new charging speed
               set_amps(vehicles[0], max_amps)
         else:
