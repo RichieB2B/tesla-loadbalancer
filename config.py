@@ -37,6 +37,7 @@ twc_longitude = 4.900513198963123
 sleep = 15
 
 # Track PV production?
+# Can be overridden using web interface and in settings.json
 pv_mode = False
 
 # Flask web server

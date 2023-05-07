@@ -23,6 +23,7 @@ max_tesla = config.twc_safe
 pv_mode = config.pv_mode
 p1_updated = ev_updated = datetime.min
 last_printed = datetime.min
+settings_file = 'settings.json'
 
 # Flash web server
 app = Flask(__name__)
@@ -61,6 +62,8 @@ def save():
       amps = config.twc_min
     max_tesla = amps
   tprint(f"Web interface saved: pv_mode = {pv_mode}, amps = {max_tesla}")
+  with open(settings_file, 'w') as outfile:
+    json.dump({ 'pv_mode': pv_mode, 'max_tesla': max_tesla}, outfile)
   return render_template('saved.html'), {"Refresh": "3; url=/"}
 
 def set_amps(vehicle, amps):
@@ -172,6 +175,13 @@ def get_tesla_amps(charger_current, charger_power):
 
 if __name__ == "__main__":
   mqtt_init()
+  try:
+    with open(settings_file, 'r') as f:
+      s = json.load(f)
+      pv_mode = s['pv_mode']
+      max_tesla = s['max_tesla']
+  except (FileNotFoundError, KeyError):
+    pass
   if not config.debug:
     flask.cli.show_server_banner = lambda *args: None
   threading.Thread(target=lambda: app.run(host=config.listen, port=config.port, debug=config.debug, use_reloader=False)).start()
