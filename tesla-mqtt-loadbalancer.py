@@ -22,7 +22,7 @@ last_amps = 0
 max_tesla = config.twc_safe
 pv_mode = config.pv_mode
 p1_updated = ev_updated = datetime.min
-last_printed = datetime.now()
+last_printed = datetime.min
 
 # Flash web server
 app = Flask(__name__)
@@ -116,13 +116,14 @@ def on_p1_message(client, userdata, msg):
   p1_updated = datetime.now()
 
 def on_ev_message(client, userdata, msg):
-  global ev_current1, ev_current2, ev_current3, ev_power
+  global ev_current1, ev_current2, ev_current3, ev_power, ev_updated
   m_decode=str(msg.payload.decode("utf-8","ignore"))
   m=json.loads(m_decode)
   ev_current1 = m.get('CurrentL1', ev_current1)
   ev_current2 = m.get('CurrentL2', ev_current2)
   ev_current3 = m.get('CurrentL3', ev_current3)
   ev_power = m.get('Power', ev_power * 1000.0) / 1000.0
+  ev_updated = datetime.now()
 
 def mqtt_init():
   client = mqtt.Client("P1")
@@ -192,6 +193,12 @@ if __name__ == "__main__":
       if (now - last_printed).total_seconds() >= 3600:
         tprint(f"P1 last updated at {p1_updated}, EV last updated at {ev_updated}")
         last_printed = now
+        if p1_updated > datetime.min and p1_updated < now - timedelta(hours=1):
+          tprint(f"P1 reading too old: exiting")
+          sys.exit(0)
+        if ev_updated > datetime.min and ev_updated < now - timedelta(days=1):
+          tprint(f"EV reading too old: exiting")
+          sys.exit(0)
       # could a Tesla charge session be going on?
       # assume PV production during daytime
       pv_production = pv_mode and (8 < now.hour < 21)
