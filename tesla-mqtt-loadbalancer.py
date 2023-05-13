@@ -180,6 +180,7 @@ if __name__ == "__main__":
       s = json.load(f)
       pv_mode = s['pv_mode']
       max_tesla = s['max_tesla']
+      tprint(f"Read from {settings_file}: pv_mode = {pv_mode}, max_tesla = {max_tesla}")
   except (FileNotFoundError, KeyError):
     pass
   if not config.debug:
@@ -203,12 +204,14 @@ if __name__ == "__main__":
       if (now - last_printed).total_seconds() >= 3600:
         tprint(f"P1 last updated at {p1_updated}, EV last updated at {ev_updated}")
         last_printed = now
-        if p1_updated > datetime.min and p1_updated < now - timedelta(hours=1):
-          tprint(f"P1 reading too old: exiting")
-          sys.exit(0)
-        if ev_updated > datetime.min and ev_updated < now - timedelta(days=1):
-          tprint(f"EV reading too old: exiting")
-          sys.exit(0)
+      if p1_updated > datetime.min and p1_updated < now - timedelta(minutes=10):
+        tprint(f"P1 last updated at {p1_updated}, EV last updated at {ev_updated}")
+        tprint(f"P1 reading too old: exiting")
+        sys.exit(0)
+      if ev_updated > datetime.min and ev_updated < now - timedelta(days=1):
+        tprint(f"P1 last updated at {p1_updated}, EV last updated at {ev_updated}")
+        tprint(f"EV reading too old: exiting")
+        sys.exit(0)
       # could a Tesla charge session be going on?
       # assume PV production during daytime
       pv_production = pv_mode and (8 < now.hour < 21)
