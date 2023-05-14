@@ -12,8 +12,6 @@ mqtt_p1_topic = "dsmr/json"
 ev_meter_url = "http://localhost:8080/api/last/ORNO3P1.1"
 # mqtt topic for EV Charger kWh meter, set to None to use Tesla API
 mqtt_ev_topic = "mbmd/orno3p1-1"
-# Dict key for EV current values, will be appended with L1, L2 and L3
-ev_current = "Current"
 
 # Tesla.com user name
 tesla_user = "elon@tesla.com"
@@ -37,8 +35,14 @@ twc_longitude = 4.900513198963123
 sleep = 15
 
 # Track PV production?
+# Valid values are: "normal", "pv" and "twcmanager"
 # Can be overridden using web interface and in settings.json
-pv_mode = False
+pv_mode = "pv"
+
+# mqtt topics to user for TWCManager when pv_mode is set to "twcmanager"
+#mqtt_twc_chargenow_topic = "TWC/control/chargeNow"
+#mqtt_twc_consumption_topic = "TWC/consumption"
+#mqtt_twc_generation_topic = "TWC/generation"
 
 # Flask web server
 listen = "0.0.0.0"

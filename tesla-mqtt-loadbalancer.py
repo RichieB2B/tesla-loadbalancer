@@ -24,6 +24,7 @@ pv_mode = config.pv_mode
 p1_updated = ev_updated = datetime.min
 last_printed = datetime.min
 settings_file = 'settings.json'
+mqtt_client = None
 
 # Flash web server
 app = Flask(__name__)
@@ -49,10 +50,7 @@ def index():
 def save():
   global pv_mode
   global max_tesla
-  if request.form.get('mode','') == 'pv':
-    pv_mode = True
-  else:
-    pv_mode = False
+  pv_mode = request.form.get('mode','pv')
   amps = request.form.get('amps','')
   if amps and amps.isdigit():
     amps = int(amps)
@@ -68,6 +66,9 @@ def save():
 
 def set_amps(vehicle, amps):
   if amps < 1:
+    return {}
+  if pv_mode == "twcmanager" and hasattr(config, "mqtt_twc_chargenow_topic"):
+    mqtt_client.publish(config.mqtt_twc_chargenow_topic, f"{amps},300")
     return {}
   try:
     # set it twice if < 5A, see https://github.com/tdorssers/TeslaPy/pull/42
@@ -117,6 +118,11 @@ def on_p1_message(client, userdata, msg):
   v3 = float(m.get('phase_voltage_l3', 230))
   p1_voltage_sum = v1 + v2 + v3
   p1_updated = datetime.now()
+  if mqtt_client:
+    if hasattr(config, "mqtt_twc_consumption_topic"):
+      mqtt_client.publish(config.mqtt_twc_consumption_topic, p1_delivered * 1000.0)
+    if hasattr(config, "mqtt_twc_generation_topic"):
+      mqtt_client.publish(config.mqtt_twc_generation_topic, p1_returned * 1000.0)
 
 def on_ev_message(client, userdata, msg):
   global ev_current1, ev_current2, ev_current3, ev_power, ev_updated
@@ -137,6 +143,7 @@ def mqtt_init():
     client.message_callback_add(config.mqtt_ev_topic,on_ev_message)
     client.subscribe(config.mqtt_ev_topic)
   client.loop_start()
+  return client
 
 def get_ev_meter(url):
   global ev_current1, ev_current2, ev_current3, ev_power
@@ -174,7 +181,7 @@ def get_tesla_amps(charger_current, charger_power):
   return (amps, power)
 
 if __name__ == "__main__":
-  mqtt_init()
+  mqtt_client = mqtt_init()
   try:
     with open(settings_file, 'r') as f:
       s = json.load(f)
@@ -214,7 +221,7 @@ if __name__ == "__main__":
         sys.exit(0)
       # could a Tesla charge session be going on?
       # assume PV production during daytime
-      pv_production = pv_mode and (8 < now.hour < 21)
+      pv_production = (pv_mode == "pv" and (8 < now.hour < 21))
       dprint(f'p1_delivered = {p1_delivered}')
       dprint(f'ev_power = {ev_power}')
       if current_max >= config.baseload + last_amps or pv_production:
@@ -305,9 +312,10 @@ if __name__ == "__main__":
               else:
                 max_amps = min(new_amps, config.twc_max)
               dprint(f"max_amps     = {max_amps}")
-              tprint(f"{usage_str}, Tesla is using {tesla_amps:>2}A. Changing Tesla to {max_amps:>2}A.")
-              # set the new charging speed
-              set_amps(vehicles[0], max_amps)
+              if overshoot or pv_mode != "twcmanager":
+                tprint(f"{usage_str}, Tesla is using {tesla_amps:>2}A. Changing Tesla to {max_amps:>2}A.")
+                # set the new charging speed
+                set_amps(vehicles[0], max_amps)
         else:
           # was a charging session just stopped?
           if charging and debounce > 3:

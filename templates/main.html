@@ -7,15 +7,20 @@
   <h2>Charging mode</h2>
   <p>
     <input type="radio" name="mode" value="normal"
-      {% if not pvmode %}
+      {% if pvmode == "normal" %}
         checked
       {% endif %}
     >Normal<br>
     <input type="radio" name="mode" value="pv"
-      {% if pvmode %}
+      {% if pvmode == "pv" %}
         checked
       {% endif %}
     >Follow PV production<br>
+    <input type="radio" name="mode" value="twcmanager"
+      {% if pvmode == "twcmanager" %}
+        checked
+      {% endif %}
+    >Use TWC Manager<br>
   </p>
   <p>
     Max charging amps: <input type="text" name="amps" size=2 value="{{ amps }}"> A
